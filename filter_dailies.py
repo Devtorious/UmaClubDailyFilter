@@ -3,21 +3,37 @@ UmaClubDailyFilter
 Reads a CSV club file exported from chronogenesis.net and prints the names of
 club members who have NOT completed their dailies.
 
-A member is considered to have skipped their dailies when their
-"Daily Fan Gain" column value is a number strictly less than 300.
-Values that contain only a dash ("-") are treated as null and are ignored.
+Two CSV formats are supported:
+
+  Legacy format:  columns include "Name" and "Daily Fan Gain".
+                  A member is inactive when Daily Fan Gain < 300.
+
+  Monthly format: first column is "Trainer"; remaining columns are
+                  "Day 1", "Day 2", … containing *cumulative* fan totals.
+                  Per-day gain is computed as Day[N] - Day[N-1].
+                  A day is skipped (missed) when the gain is < 300.
+                  Members are reported with a count of how many days
+                  they missed.
+
+Values that are empty or contain only a dash ("-") are treated as missing
+and are skipped; a gap in the day sequence resets the running baseline.
 
 Usage:
     python filter_dailies.py [CSV_FILE]
 
-    CSV_FILE defaults to "sample_club_data.csv" when not provided.
+    If CSV_FILE is not provided as a command-line argument the script
+    prompts the user for a filename. Pressing Enter without typing a name
+    defaults to "sample_club_data.csv".
 """
 
 import csv
+import re
 import sys
+from typing import Optional
 
 DAILY_FAN_THRESHOLD = 300
 NULL_MARKER = "-"
+DEFAULT_FILE = "sample_club_data.csv"
 
 
 def load_csv(filepath: str) -> list[dict]:
@@ -26,6 +42,10 @@ def load_csv(filepath: str) -> list[dict]:
         reader = csv.DictReader(fh)
         return list(reader)
 
+
+# ---------------------------------------------------------------------------
+# Legacy-format helpers
+# ---------------------------------------------------------------------------
 
 def filter_inactive_members(rows: list[dict], column: str = "Daily Fan Gain") -> list[dict]:
     """Return rows whose *column* value is a number below DAILY_FAN_THRESHOLD.
@@ -61,17 +81,128 @@ def print_report(inactive_members: list[dict], name_column: str = "Name") -> Non
         print(f"  {name} (Daily Fan Gain: {fan_gain})")
 
 
-def main(filepath: str = "sample_club_data.csv") -> None:
+# ---------------------------------------------------------------------------
+# Monthly-format helpers
+# ---------------------------------------------------------------------------
+
+def _is_monthly_format(rows: list[dict]) -> bool:
+    """Return True when the CSV uses cumulative per-day columns (e.g. "Day 1")."""
+    if not rows:
+        return False
+    return any(re.match(r"Day \d+$", h.strip()) for h in rows[0].keys())
+
+
+def _get_day_columns(rows: list[dict]) -> list[str]:
+    """Return day column names sorted numerically (e.g. Day 1, Day 2, …)."""
+    if not rows:
+        return []
+    day_cols = [h for h in rows[0].keys() if re.match(r"Day \d+$", h.strip())]
+    day_cols.sort(key=lambda x: int(x.split()[-1]))
+    return day_cols
+
+
+def analyze_monthly_data(rows: list[dict]) -> list[dict]:
+    """Analyze monthly cumulative fan data and return members who missed dailies.
+
+    For each trainer the function computes the per-day gain from consecutive
+    non-empty day values.  A day is counted as *missed* when the gain is
+    strictly below DAILY_FAN_THRESHOLD.  A gap (empty day) resets the running
+    baseline so that cross-gap comparisons are never made.
+
+    Returns a list of dicts (one per trainer who missed at least one day) with
+    the keys: "Trainer", "missed_days", "total_days".
+    """
+    day_cols = _get_day_columns(rows)
+    results = []
+
+    for row in rows:
+        trainer = row.get("Trainer", "Unknown").strip()
+
+        # Build a mapping of column → integer value for non-empty days.
+        day_values: dict[str, int] = {}
+        for col in day_cols:
+            raw = row.get(col, "").strip()
+            if raw == NULL_MARKER or raw == "":
+                continue
+            try:
+                day_values[col] = int(raw)
+            except ValueError:
+                continue
+
+        missed = 0
+        total_checked = 0
+        prev_val: Optional[int] = None
+
+        for col in day_cols:
+            if col not in day_values:
+                # Gap in data: reset the baseline so we never compare across it.
+                prev_val = None
+                continue
+            curr_val = day_values[col]
+            if prev_val is not None:
+                gain = curr_val - prev_val
+                total_checked += 1
+                if gain < DAILY_FAN_THRESHOLD:
+                    missed += 1
+            prev_val = curr_val
+
+        if missed > 0:
+            results.append(
+                {
+                    "Trainer": trainer,
+                    "missed_days": missed,
+                    "total_days": total_checked,
+                }
+            )
+
+    return results
+
+
+def print_monthly_report(results: list[dict]) -> None:
+    """Print a report of members who missed dailies in the monthly data."""
+    if not results:
+        print("All members have completed their dailies this month!")
+        return
+
+    print(
+        f"Members who have NOT completed their dailies this month"
+        f" ({len(results)} found):"
+    )
+    print("-" * 50)
+    for member in results:
+        trainer = member["Trainer"]
+        missed = member["missed_days"]
+        total = member["total_days"]
+        print(
+            f"  Trainer {trainer}: missed {missed} out of {total} checked day(s)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main(filepath: Optional[str] = None) -> None:
+    if filepath is None:
+        user_input = input(f"Enter CSV filename (default: {DEFAULT_FILE}): ").strip()
+        filepath = user_input if user_input else DEFAULT_FILE
+
     try:
         rows = load_csv(filepath)
     except FileNotFoundError:
         print(f"Error: File '{filepath}' not found.", file=sys.stderr)
         sys.exit(1)
 
-    inactive = filter_inactive_members(rows)
-    print_report(inactive)
+    if _is_monthly_format(rows):
+        results = analyze_monthly_data(rows)
+        print_monthly_report(results)
+    else:
+        inactive = filter_inactive_members(rows)
+        print_report(inactive)
 
 
 if __name__ == "__main__":
-    csv_file = sys.argv[1] if len(sys.argv) > 1 else "sample_club_data.csv"
-    main(csv_file)
+    if len(sys.argv) > 1:
+        main(sys.argv[1])
+    else:
+        main()
