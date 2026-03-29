@@ -1,5 +1,5 @@
 # UmaClubDailyFilter
-A vibe coded filter to sort club members who have not done their dailies in Umamusume
+Code written with copilot assistants to sort club members who have not done their dailies in Umamusume
 
 >The script check for daily fan gain in the cvs file and return members that has <300 fan gain a day.
 >Which I considered not completed their debut run;
