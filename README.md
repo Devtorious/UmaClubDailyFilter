@@ -5,6 +5,12 @@ Code written with copilot assistants to sort club members who have not done thei
 >Which I considered not completed their debut run;
 >I do not check for the minimum fan gain a day or week it is outside of my scope, however feel free to fork it or contribute to this repo.
 
+Setup:
+``` sh
+git clone https://github.com/Devtorious/UmaClubDailyFilter
+cd UmaClubDailyFilter
+```
+
 Usage:
 ``` sh
 python filter_dailies.py <your CVS file>
