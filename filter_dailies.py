@@ -1,31 +1,3 @@
-"""
-UmaClubDailyFilter
-Reads a CSV club file exported from chronogenesis.net and prints the names of
-club members who have NOT completed their dailies.
-
-Two CSV formats are supported:
-
-  Legacy format:  columns include "Name" and "Daily Fan Gain".
-                  A member is inactive when Daily Fan Gain < 300.
-
-  Monthly format: first column is "Trainer"; remaining columns are
-                  "Day 1", "Day 2", … containing *cumulative* fan totals.
-                  Per-day gain is computed as Day[N] - Day[N-1].
-                  A day is skipped (missed) when the gain is < 300.
-                  Members are reported with a count of how many days
-                  they missed.
-
-Values that are empty or contain only a dash ("-") are treated as missing
-and are skipped; a gap in the day sequence resets the running baseline.
-
-Usage:
-    python filter_dailies.py [CSV_FILE]
-
-    If CSV_FILE is not provided as a command-line argument the script
-    prompts the user for a filename. Pressing Enter without typing a name
-    defaults to "sample_club_data.csv".
-"""
-
 import csv
 import re
 import sys
